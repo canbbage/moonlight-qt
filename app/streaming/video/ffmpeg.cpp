@@ -1,6 +1,8 @@
 #include <Limelight.h>
 #include "ffmpeg.h"
 #include "streaming/session.h"
+#include "streaming/streamutils.h"
+#include "streaming/latencytracker.h"
 
 #include <h264_stream.h>
 
@@ -1894,6 +1896,8 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     m_ActiveWndVideoStats.totalReassemblyTime += du->enqueueTimeMs - du->receiveTimeMs;
 
+    // 注意：解码部分的ID应该从Sunshine发送的数据中获取，暂时移除相关实现
+
     err = avcodec_send_packet(m_VideoDecoderCtx, m_Pkt);
     if (err < 0) {
         char errorstring[512];
@@ -1929,6 +1933,8 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
 void FFmpegVideoDecoder::renderFrameOnMainThread()
 {
+    // 注意：渲染部分的ID也应该从Sunshine发送的数据中获取，暂时移除相关实现
+
     m_Pacer->renderOnMainThread();
 }
 

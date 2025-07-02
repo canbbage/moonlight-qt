@@ -97,6 +97,7 @@ class Session : public QObject
     friend class DeferredSessionCleanupTask;
     friend class AsyncConnectionStartThread;
     friend class ExecThread;
+    friend class LatencyTracker;
 
 public:
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);

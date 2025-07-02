@@ -4,6 +4,7 @@
 #include "backend/computermanager.h"
 
 #include "SDL_compat.h"
+#include <QString>
 
 struct GamepadState {
     SDL_GameController* controller;
@@ -153,6 +154,11 @@ public:
     static
     QString getUnmappedGamepads();
 
+    // 获取当前延迟跟踪ID
+    QString getCurrentLatencyTrackingId() const {
+        return m_CurrentLatencyTrackingId;
+    }
+
 private:
     enum KeyCombo {
         KeyComboQuit,
@@ -244,6 +250,9 @@ private:
     SDL_TimerID m_DragTimer;
     char m_DragButton;
     int m_NumFingersDown;
+    
+    // 用于延迟跟踪的当前ID
+    QString m_CurrentLatencyTrackingId;
 
     static const int k_ButtonMap[];
 };
