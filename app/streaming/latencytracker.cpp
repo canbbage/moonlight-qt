@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QUrlQuery>
 #include <QRandomGenerator>
+#include <QEventLoop>
 #include <QDebug>
 #include "session.h"
 
