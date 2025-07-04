@@ -64,28 +64,25 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
     }
 
     // 跟踪鼠标左键按下事件的延迟
+    int trackingId = 0;
     if (button == BUTTON_LEFT && event->state == SDL_PRESSED) {
         // 生成唯一ID并开始跟踪
-        int trackingId = LatencyTracker::instance()->startTracking(LatencyTracker::EVENT_MOUSE_CLICK);
-        
-        // 将ID存储在m_CurrentLatencyTrackingId中，以便后续阶段使用
-        m_CurrentLatencyTrackingId = QString::number(trackingId);
+        trackingId = LatencyTracker::instance()->startTracking(LatencyTracker::EVENT_MOUSE_CLICK);
+    
+        LatencyTracker::instance()->recordTimestamp(trackingId, LatencyTracker::STAGE_INPUT);
     }
+
+    LiSetInputTraceId(trackingId);
 
     LiSendMouseButtonEvent(event->state == SDL_PRESSED ?
                                BUTTON_ACTION_PRESS :
                                BUTTON_ACTION_RELEASE,
                            button);
-                           
+    LiClearInputTraceId();                     
     // 记录发送阶段的时间戳
-    if (!m_CurrentLatencyTrackingId.isEmpty() && button == BUTTON_LEFT) {
-        int trackingId = m_CurrentLatencyTrackingId.toInt();
+
+    if (trackingId != 0) {
         LatencyTracker::instance()->recordTimestamp(trackingId, LatencyTracker::STAGE_SEND);
-        
-        // 如果是按钮释放事件，清除当前跟踪ID
-        if (event->state == SDL_RELEASED) {
-            m_CurrentLatencyTrackingId.clear();
-        }
     }
 }
 
