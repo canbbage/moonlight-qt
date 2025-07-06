@@ -1749,6 +1749,31 @@ void FFmpegVideoDecoder::decoderThreadProc()
 
                         // Store the presentation time
                         frame->pts = du.presentationTimeMs;
+                        
+                        // 查找对应的traceId并记录解码结束时间
+                        QMutexLocker locker(&m_FrameTraceMapLock);
+                        if (m_FrameNumberToTraceId.contains(du.frameNumber)) {
+                            uint32_t traceId = m_FrameNumberToTraceId[du.frameNumber];
+                            
+                            // 将traceId存储到frame的opaque字段中，以便在pacer和renderer中使用
+                            frame->opaque = reinterpret_cast<void*>(traceId);
+                            
+                            // 解锁互斥锁，避免死锁
+                            locker.unlock();
+                            
+                            // 记录解码结束时间
+                            LatencyTracker* tracker = LatencyTracker::instance();
+                            if (traceId != 0 && tracker->hasTrackingId(traceId)) {
+                                tracker->recordTimestamp(traceId, LatencyTracker::STAGE_DECODE_END);
+                                
+                                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                          "记录帧 %d 的解码结束时间，traceId: %u",
+                                          du.frameNumber, traceId);
+                            }
+                            
+                            // 不要移除映射，因为我们需要在pacer和renderer中使用traceId
+                            // 当帧被渲染完成后，traceId会被自动释放
+                        }
                     }
 
                     m_ActiveWndVideoStats.decodedFrames++;
@@ -1821,7 +1846,7 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     }
 
     if (!m_LastFrameNumber) {
-        m_ActiveWndVideoStats.measurementStartTimestamp = SDL_GetTicks();
+        m_ActiveWndVideoStats.measurementStartTimestamp = LiGetMillis();
         m_LastFrameNumber = du->frameNumber;
     }
     else {
@@ -1894,9 +1919,47 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
         m_Pkt->flags = 0;
     }
 
-    m_ActiveWndVideoStats.totalReassemblyTime += du->enqueueTimeMs - du->receiveTimeMs;
-
-    // 注意：解码部分的ID应该从Sunshine发送的数据中获取，暂时移除相关实现
+    // 从DECODE_UNIT结构中获取traceId和时间戳
+    // 注意：这些字段已经在moonlight-common-c的VideoDepacketizer.c中从帧头解析出来并填充到DECODE_UNIT中
+    uint32_t traceId = du->traceId;
+    int64_t input_arrival_ns = du->inputArrivalTimeNs;
+    int64_t encode_start_ns = du->encodeStartTimeNs;
+    int64_t encode_end_ns = du->encodeEndTimeNs;
+    
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+              "从帧头获取: traceId=%u, input_arrival_ns=%lld, encode_start_ns=%lld, encode_end_ns=%lld",
+              traceId, input_arrival_ns, encode_start_ns, encode_end_ns);
+    
+    // 记录解码开始时间并添加Sunshine时间戳到LatencyTracker
+    LatencyTracker* tracker = LatencyTracker::instance();
+    
+    if (traceId != 0) {
+        // 记录framenumber和traceid的对应关系
+        QMutexLocker locker(&m_FrameTraceMapLock);
+        m_FrameNumberToTraceId[du->frameNumber] = traceId;
+        
+        if (tracker->hasTrackingId(traceId)) {
+            // 记录当前解码开始时间
+            tracker->recordTimestamp(traceId, LatencyTracker::STAGE_DECODE);
+            
+            // 记录帧接收和入队时间
+            // 将毫秒时间戳转换为qint64
+            qint64 receiveTimeMs = static_cast<qint64>(du->receiveTimeMs);
+            qint64 enqueueTimeMs = static_cast<qint64>(du->enqueueTimeMs);
+            
+            tracker->recordTimestamp(traceId, LatencyTracker::STAGE_FRAME_RECEIVE, receiveTimeMs);
+            tracker->recordTimestamp(traceId, LatencyTracker::STAGE_FRAME_ENQUEUE, enqueueTimeMs);
+            
+            // 记录Sunshine的各个时间戳
+            tracker->recordSunshineTimestamp(traceId, LatencyTracker::STAGE_SUNSHINE_INPUT_ARRIVAL, input_arrival_ns);
+            tracker->recordSunshineTimestamp(traceId, LatencyTracker::STAGE_SUNSHINE_ENCODE_START, encode_start_ns);
+            tracker->recordSunshineTimestamp(traceId, LatencyTracker::STAGE_SUNSHINE_ENCODE_END, encode_end_ns);
+            
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                      "记录帧 %d 的接收时间: %lld ms, 入队时间: %lld ms",
+                      du->frameNumber, receiveTimeMs, enqueueTimeMs);
+        }
+    }
 
     err = avcodec_send_packet(m_VideoDecoderCtx, m_Pkt);
     if (err < 0) {

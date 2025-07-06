@@ -1,5 +1,6 @@
 #include "pacer.h"
 #include "streaming/streamutils.h"
+#include "streaming/latencytracker.h"
 
 #ifdef Q_OS_WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -332,13 +333,39 @@ void Pacer::signalVsync()
 
 void Pacer::renderFrame(AVFrame* frame)
 {
+    // 获取traceId
+    uint32_t traceId = reinterpret_cast<uintptr_t>(frame->opaque);
+    LatencyTracker* tracker = nullptr;
+    
+    if (traceId != 0) {
+        tracker = LatencyTracker::instance();
+        if (tracker->hasTrackingId(traceId)) {
+            // 记录pacer结束时间
+            tracker->recordTimestamp(traceId, LatencyTracker::STAGE_PACER_END);
+            // 记录渲染开始时间
+            tracker->recordTimestamp(traceId, LatencyTracker::STAGE_RENDER);
+        }
+    }
+
     // Count time spent in Pacer's queues
-    Uint32 beforeRender = SDL_GetTicks();
+    qint64 beforeRender = SDL_GetTicks();
     m_VideoStats->totalPacerTime += beforeRender - frame->pkt_dts;
 
     // Render it
     m_VsyncRenderer->renderFrame(frame);
-    Uint32 afterRender = SDL_GetTicks();
+    qint64 afterRender = SDL_GetTicks();
+
+    // 记录渲染结束时间
+    if (traceId != 0 && tracker != nullptr && tracker->hasTrackingId(traceId)) {
+        tracker->recordTimestamp(traceId, LatencyTracker::STAGE_RENDER_END);
+        
+        // 计算pacer时间和渲染时间
+        qint64 pacerTime = beforeRender - frame->pkt_dts; // 从Pacer统计
+        qint64 renderTime = afterRender - beforeRender;   // 从Pacer统计
+        
+        // 使用LatencyTracker计算和打印各个阶段的延迟
+        tracker->calculateAndLogLatencies(traceId, pacerTime, renderTime);
+    }
 
     m_VideoStats->totalRenderTime += afterRender - beforeRender;
     m_VideoStats->renderedFrames++;
@@ -400,6 +427,16 @@ void Pacer::submitFrame(AVFrame* frame)
 {
     // Make sure initialize() has been called
     SDL_assert(m_MaxVideoFps != 0);
+
+    // 记录pacer开始时间
+    // 我们将traceId存储在frame的opaque字段中
+    uint32_t traceId = reinterpret_cast<uintptr_t>(frame->opaque);
+    if (traceId != 0) {
+        LatencyTracker* tracker = LatencyTracker::instance();
+        if (tracker->hasTrackingId(traceId)) {
+            tracker->recordTimestamp(traceId, LatencyTracker::STAGE_PACER_START);
+        }
+    }
 
     // Queue the frame and possibly wake up the render thread
     m_FrameQueueLock.lock();

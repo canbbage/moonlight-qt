@@ -104,6 +104,10 @@ private:
     VIDEO_STATS m_GlobalVideoStats;
     std::set<IFFmpegRenderer::RendererType> m_FailedRenderers;
 
+    // 帧号和traceId的映射表
+    QMap<int, uint32_t> m_FrameNumberToTraceId;
+    QMutex m_FrameTraceMapLock;
+
     int m_FramesIn;
     int m_FramesOut;
 

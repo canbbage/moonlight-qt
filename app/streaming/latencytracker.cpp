@@ -54,7 +54,7 @@ int LatencyTracker::startTracking(EventType eventType)
     // 创建新条目并记录起始时间戳
     TimestampEntry entry;
     entry.eventType = eventType;
-    entry.timestamps[STAGE_INPUT] = QDateTime::currentMSecsSinceEpoch();
+    entry.timestamps[STAGE_INPUT] = LiGetMillis(); // 使用LiGetMillis()替代SDL_GetTicks()
     
     m_entries[id] = entry;
     
@@ -63,16 +63,44 @@ int LatencyTracker::startTracking(EventType eventType)
     return id;
 }
 
+// 使用指定ID开始跟踪
+void LatencyTracker::startTrackingWithId(int id, EventType eventType)
+{
+    QMutexLocker locker(&m_mutex);
+    
+    // 创建新条目
+    TimestampEntry entry;
+    entry.eventType = eventType;
+    
+    m_entries[id] = entry;
+    
+    qDebug() << "LatencyTracker: Started tracking with specified ID:" << id << "EventType:" << getEventTypeName(eventType);
+}
+
 void LatencyTracker::recordTimestamp(int id, TrackingStage stage)
 {
     QMutexLocker locker(&m_mutex);
     
     if (m_entries.contains(id)) {
-        qint64 timestamp = QDateTime::currentMSecsSinceEpoch();
+        // 使用PltGetMillis()获取时间戳，与Moonlight-common-c使用相同的时间基准
+        qint64 timestamp = LiGetMillis();  // LiGetMillis内部调用PltGetMillis
         m_entries[id].timestamps[stage] = timestamp;
         qDebug() << "LatencyTracker: Recorded ID:" << id << "at stage:" << getStageName(stage) << "timestamp:" << timestamp;
     } else {
         qWarning() << "LatencyTracker: Attempted to record timestamp for unknown ID:" << id;
+    }
+}
+
+// 记录某个阶段的指定时间戳
+void LatencyTracker::recordTimestamp(int id, TrackingStage stage, qint64 timestamp)
+{
+    QMutexLocker locker(&m_mutex);
+    
+    if (m_entries.contains(id)) {
+        m_entries[id].timestamps[stage] = timestamp;
+        qDebug() << "LatencyTracker: Recorded ID:" << id << "at stage:" << getStageName(stage) << "with specified timestamp:" << timestamp;
+    } else {
+        qWarning() << "LatencyTracker: Attempted to record specified timestamp for unknown ID:" << id;
     }
 }
 
@@ -306,6 +334,24 @@ bool LatencyTracker::hasTrackingId(int id) const
     return m_entries.constFind(id) != m_entries.constEnd();
 }
 
+// 这里曾经有一个getEventType的定义，已移至下方
+
+// 记录Sunshine的时间戳（纳秒级别）
+void LatencyTracker::recordSunshineTimestamp(int id, TrackingStage stage, int64_t timestampNs)
+{
+    QMutexLocker locker(&m_mutex);
+    
+    if (m_entries.contains(id)) {
+        // 直接存储纳秒值，不转换为毫秒
+        m_entries[id].timestamps[stage] = timestampNs;
+        qDebug() << "LatencyTracker: Recorded Sunshine timestamp for ID:" << id 
+                 << "at stage:" << getStageName(stage) 
+                 << "timestamp (ns):" << timestampNs;
+    } else {
+        qWarning() << "LatencyTracker: Attempted to record Sunshine timestamp for unknown ID:" << id;
+    }
+}
+
 QString LatencyTracker::getStageName(TrackingStage stage)
 {
     switch (stage) {
@@ -315,8 +361,26 @@ QString LatencyTracker::getStageName(TrackingStage stage)
             return "send";
         case STAGE_DECODE:
             return "decode";
+        case STAGE_DECODE_END:
+            return "decode_end";
+        case STAGE_PACER_START:
+            return "pacer_start";
+        case STAGE_PACER_END:
+            return "pacer_end";
         case STAGE_RENDER:
             return "render";
+        case STAGE_RENDER_END:
+            return "render_end";
+        case STAGE_SUNSHINE_INPUT_ARRIVAL:
+            return "sunshine_input_arrival";
+        case STAGE_SUNSHINE_ENCODE_START:
+            return "sunshine_encode_start";
+        case STAGE_SUNSHINE_ENCODE_END:
+            return "sunshine_encode_end";
+        case STAGE_FRAME_RECEIVE:
+            return "frame_receive";
+        case STAGE_FRAME_ENQUEUE:
+            return "frame_enqueue";
         default:
             return "unknown";
     }
@@ -331,7 +395,117 @@ QString LatencyTracker::getEventTypeName(EventType eventType)
             return "key_press";
         case EVENT_GAMEPAD_BUTTON:
             return "gamepad_button";
+        case EVENT_UNKNOWN:
+            return "unknown";
         default:
             return "unknown";
     }
+} 
+
+// 获取事件类型
+LatencyTracker::EventType LatencyTracker::getEventType(int id) const
+{
+    QMutexLocker locker(&m_mutex);
+    
+    if (m_entries.contains(id)) {
+        return m_entries[id].eventType;
+    }
+    
+    return EVENT_UNKNOWN;
+}
+
+// 计算并打印各个阶段的延迟
+void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 renderTime)
+{
+    QMutexLocker locker(&m_mutex);
+    
+    if (!m_entries.contains(id)) {
+        qWarning() << "LatencyTracker: Attempted to calculate latencies for unknown ID:" << id;
+        return;
+    }
+    
+    // 获取所有时间戳
+    QMap<TrackingStage, qint64> timestamps = m_entries[id].timestamps;
+    
+    // 计算各个阶段的时间间隔
+    qint64 inputToSendTime = 0;
+    qint64 sunshineInputToEncodeTime = 0;
+    qint64 encodeTime = 0;
+    qint64 sendToReceiveTime = 0;
+    qint64 receiveToDecodeTime = 0;
+    qint64 decodeTime = 0;
+    
+    // 1. 端侧输入到发送之间 (毫秒)
+    if (timestamps.contains(STAGE_INPUT) && timestamps.contains(STAGE_SEND)) {
+        inputToSendTime = timestamps[STAGE_SEND] - timestamps[STAGE_INPUT];
+    }
+    
+    // 2. sunshine收到输入到编码之间 (纳秒转毫秒)
+    if (timestamps.contains(STAGE_SUNSHINE_INPUT_ARRIVAL) && 
+        timestamps.contains(STAGE_SUNSHINE_ENCODE_START)) {
+        // 将纳秒转换为毫秒
+        qint64 inputArrivalMs = timestamps[STAGE_SUNSHINE_INPUT_ARRIVAL] / 1000000;
+        qint64 encodeStartMs = timestamps[STAGE_SUNSHINE_ENCODE_START] / 1000000;
+        sunshineInputToEncodeTime = encodeStartMs - inputArrivalMs;
+    }
+    
+    // 3. 编码开始到编码结束之间 (纳秒转毫秒)
+    if (timestamps.contains(STAGE_SUNSHINE_ENCODE_START) && 
+        timestamps.contains(STAGE_SUNSHINE_ENCODE_END)) {
+        // 将纳秒转换为毫秒
+        qint64 encodeStartMs = timestamps[STAGE_SUNSHINE_ENCODE_START] / 1000000;
+        qint64 encodeEndMs = timestamps[STAGE_SUNSHINE_ENCODE_END] / 1000000;
+        encodeTime = encodeEndMs - encodeStartMs;
+    }
+    
+    // 4. 端侧发送输入到端侧收到码流之间 (毫秒)
+    if (timestamps.contains(STAGE_SEND) && 
+        timestamps.contains(STAGE_FRAME_RECEIVE)) {
+        sendToReceiveTime = timestamps[STAGE_FRAME_RECEIVE] - 
+                           timestamps[STAGE_SEND];
+    }
+    
+    // 5. 端侧收到码流到端侧解码之前 (毫秒)
+    if (timestamps.contains(STAGE_FRAME_RECEIVE) && 
+        timestamps.contains(STAGE_DECODE)) {
+        receiveToDecodeTime = timestamps[STAGE_DECODE] - 
+                             timestamps[STAGE_FRAME_RECEIVE];
+    }
+    
+    // 6. 解码前到解码后 (毫秒)
+    if (timestamps.contains(STAGE_DECODE) && 
+        timestamps.contains(STAGE_DECODE_END)) {
+        decodeTime = timestamps[STAGE_DECODE_END] - 
+                    timestamps[STAGE_DECODE];
+    }
+    
+    // 获取事件类型
+    EventType eventType = m_entries[id].eventType;
+    QString eventTypeName = getEventTypeName(eventType);
+    
+    // 打印所有时间间隔，单位为毫秒
+    qint64 totalLatency = (timestamps.contains(STAGE_INPUT) && timestamps.contains(STAGE_RENDER_END)) ?
+                         timestamps[STAGE_RENDER_END] - timestamps[STAGE_INPUT] : 0;
+    
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+              "完成帧的渲染，traceId: %d，事件类型: %s\n"
+              "1. 端侧输入到发送: %lld ms\n"
+              "2. Sunshine收到输入到编码: %lld ms\n"
+              "3. 编码时间: %lld ms\n"
+              "4. 端侧发送到接收: %lld ms\n"
+              "5. 接收到解码: %lld ms\n"
+              "6. 解码时间: %lld ms\n"
+              "7. Pacer时间: %lld ms\n"
+              "8. 渲染时间: %lld ms\n"
+              "总延迟: %lld ms",
+              id, eventTypeName.toUtf8().constData(),
+              inputToSendTime,
+              sunshineInputToEncodeTime,
+              encodeTime, 
+              sendToReceiveTime, 
+              receiveToDecodeTime, 
+              decodeTime, 
+              pacerTime, 
+              renderTime, 
+              totalLatency);
 } 
