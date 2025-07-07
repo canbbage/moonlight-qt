@@ -85,6 +85,22 @@ struct DualSenseOutputReport{
 class SdlInputHandler
 {
 public:
+    // 定义KeyCombo枚举，移到类的public部分
+    enum KeyCombo {
+        KeyComboQuit,
+        KeyComboUngrabInput,
+        KeyComboToggleFullScreen,
+        KeyComboToggleStatsOverlay,
+        KeyComboToggleMouseMode,
+        KeyComboToggleCursorHide,
+        KeyComboToggleMinimize,
+        KeyComboPasteText,
+        KeyComboTogglePointerRegionLock,
+        KeyComboQuitAndExit,
+        KeyComboToggleRectangleSelector, // 矩形选择模式快捷键
+        KeyComboMax
+    };
+
     explicit SdlInputHandler(StreamingPreferences& prefs, int streamWidth, int streamHeight);
 
     ~SdlInputHandler();
@@ -151,6 +167,9 @@ public:
 
     void updatePointerRegionLock();
 
+    // 设置相对鼠标模式
+    void setRelativeMouseMode(bool enabled);
+
     static
     QString getUnmappedGamepads();
 
@@ -160,20 +179,6 @@ public:
     }
 
 private:
-    enum KeyCombo {
-        KeyComboQuit,
-        KeyComboUngrabInput,
-        KeyComboToggleFullScreen,
-        KeyComboToggleStatsOverlay,
-        KeyComboToggleMouseMode,
-        KeyComboToggleCursorHide,
-        KeyComboToggleMinimize,
-        KeyComboPasteText,
-        KeyComboTogglePointerRegionLock,
-        KeyComboQuitAndExit,
-        KeyComboMax
-    };
-
     GamepadState*
     findStateForGamepad(SDL_JoystickID id);
 

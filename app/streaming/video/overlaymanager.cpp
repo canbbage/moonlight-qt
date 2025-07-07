@@ -4,9 +4,10 @@
 using namespace Overlay;
 
 OverlayManager::OverlayManager() :
-    m_Renderer(nullptr),
-    m_FontData(Path::readDataFile("ModeSeven.ttf"))
+    m_Renderer(nullptr)
 {
+    // 不再从文件加载字体，而是使用系统字体
+    
     memset(m_Overlays, 0, sizeof(m_Overlays));
 
     m_Overlays[OverlayType::OverlayDebug].color = {0xD0, 0xD0, 0x00, 0xFF};
@@ -126,16 +127,35 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
 
     // Construct the required font to render the overlay
     if (m_Overlays[type].font == nullptr) {
-        if (m_FontData.isEmpty()) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "SDL overlay font failed to load");
-            return;
+        // 使用系统字体，尝试加载支持中文的字体
+        #ifdef Q_OS_WIN
+        // Windows 上使用微软雅黑
+        m_Overlays[type].font = TTF_OpenFont("C:\\Windows\\Fonts\\msyh.ttc", m_Overlays[type].fontSize);
+        #elif defined(Q_OS_MAC)
+        // macOS 上使用苹方
+        m_Overlays[type].font = TTF_OpenFont("/System/Library/Fonts/PingFang.ttc", m_Overlays[type].fontSize);
+        #else
+        // Linux 上尝试使用 Noto Sans CJK
+        m_Overlays[type].font = TTF_OpenFont("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", m_Overlays[type].fontSize);
+        if (m_Overlays[type].font == nullptr) {
+            // 尝试其他常见位置
+            m_Overlays[type].font = TTF_OpenFont("/usr/share/fonts/noto/NotoSans-Regular.ttf", m_Overlays[type].fontSize);
         }
-
-        // m_FontData must stay around until the font is closed
-        m_Overlays[type].font = TTF_OpenFontRW(SDL_RWFromConstMem(m_FontData.constData(), m_FontData.size()),
-                                               1,
-                                               m_Overlays[type].fontSize);
+        #endif
+        
+        // 如果系统字体加载失败，回退到内置字体
+        if (m_Overlays[type].font == nullptr) {
+            if (m_FontData.isEmpty()) {
+                m_FontData = Path::readDataFile("ModeSeven.ttf");
+            }
+            
+            if (!m_FontData.isEmpty()) {
+                m_Overlays[type].font = TTF_OpenFontRW(SDL_RWFromConstMem(m_FontData.constData(), m_FontData.size()),
+                                                   1,
+                                                   m_Overlays[type].fontSize);
+            }
+        }
+        
         if (m_Overlays[type].font == nullptr) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "TTF_OpenFont() failed: %s",
@@ -154,8 +174,8 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
     }
 
     if (m_Overlays[type].enabled) {
-        // The _Wrapped variant is required for line breaks to work
-        SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(m_Overlays[type].font,
+        // 使用 TTF_RenderUTF8_Blended_Wrapped 来支持 UTF-8 编码的文本
+        SDL_Surface* surface = TTF_RenderUTF8_Blended_Wrapped(m_Overlays[type].font,
                                                               m_Overlays[type].text,
                                                               m_Overlays[type].color,
                                                               1024);

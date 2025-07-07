@@ -571,8 +571,11 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_Window(nullptr),
       m_VideoDecoder(nullptr),
       m_DecoderLock(0),
+      m_AudioDisabled(false),
       m_AudioMuted(false),
+      m_FullScreenFlag(0),
       m_QtWindow(nullptr),
+      m_ThreadedExec(false),
       m_UnexpectedTermination(true), // Failure prior to streaming is unexpected
       m_InputHandler(nullptr),
       m_MouseEmulationRefCount(0),
@@ -580,11 +583,17 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_ShouldExitAfterQuit(false),
       m_AsyncConnectionSuccess(false),
       m_PortTestResults(0),
+      m_ActiveVideoFormat(0),
+      m_ActiveVideoWidth(0),
+      m_ActiveVideoHeight(0),
+      m_ActiveVideoFrameRate(0),
       m_OpusDecoder(nullptr),
       m_AudioRenderer(nullptr),
       m_AudioSampleCount(0),
-      m_DropAudioEndTime(0)
+      m_DropAudioEndTime(0),
+      m_RectangleSelector(&m_OverlayManager)
 {
+    // ... existing code ...
 }
 
 bool Session::initialize()
@@ -2412,5 +2421,28 @@ DispatchDeferredCleanup:
     // When it is complete, it will release our s_ActiveSessionSemaphore
     // reference.
     QThreadPool::globalInstance()->start(new DeferredSessionCleanupTask(this));
+}
+
+void Session::toggleRectangleSelector()
+{
+    if (m_RectangleSelector.isActive()) {
+        // 停用矩形选择模式
+        m_RectangleSelector.deactivate();
+        
+        // 恢复正常的鼠标输入
+        if (m_InputHandler != nullptr) {
+            m_InputHandler->setRelativeMouseMode(true);
+        }
+    } else {
+        // 激活矩形选择模式
+        m_RectangleSelector.activate();
+        
+        // 切换到绝对鼠标模式，使鼠标可见
+        if (m_InputHandler != nullptr) {
+            m_InputHandler->setRelativeMouseMode(false);
+            // 强制显示鼠标指针
+            SDL_ShowCursor(SDL_ENABLE);
+        }
+    }
 }
 

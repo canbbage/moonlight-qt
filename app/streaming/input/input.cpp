@@ -116,6 +116,11 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, i
     m_SpecialKeyCombos[KeyComboQuitAndExit].keyCode = SDLK_e;
     m_SpecialKeyCombos[KeyComboQuitAndExit].scanCode = SDL_SCANCODE_E;
     m_SpecialKeyCombos[KeyComboQuitAndExit].enabled = true;
+    
+    m_SpecialKeyCombos[KeyComboToggleRectangleSelector].keyCombo = KeyComboToggleRectangleSelector;
+    m_SpecialKeyCombos[KeyComboToggleRectangleSelector].keyCode = SDLK_r;
+    m_SpecialKeyCombos[KeyComboToggleRectangleSelector].scanCode = SDL_SCANCODE_R;
+    m_SpecialKeyCombos[KeyComboToggleRectangleSelector].enabled = true;
 
     m_OldIgnoreDevices = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES);
     m_OldIgnoreDevicesExcept = SDL_GetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT);
@@ -444,5 +449,37 @@ void SdlInputHandler::handleTouchFingerEvent(SDL_TouchFingerEvent* event)
     }
     else {
         handleRelativeFingerEvent(event);
+    }
+}
+
+void SdlInputHandler::setRelativeMouseMode(bool enabled)
+{
+    if (enabled == !m_AbsoluteMouseMode) {
+        // 已经处于请求的模式
+        return;
+    }
+    
+    // 切换鼠标模式
+    m_AbsoluteMouseMode = !enabled;
+    
+    // 如果当前捕获活跃，需要重新应用捕获设置
+    if (isCaptureActive()) {
+        // 先释放捕获
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        if (m_FakeCaptureActive) {
+            SDL_ShowCursor(SDL_ENABLE);
+            m_FakeCaptureActive = false;
+        }
+        
+        // 如果切换到绝对模式，确保鼠标可见
+        if (m_AbsoluteMouseMode) {
+            SDL_ShowCursor(SDL_ENABLE);
+        }
+        
+        // 重新应用捕获
+        setCaptureActive(true);
+    } else if (m_AbsoluteMouseMode) {
+        // 确保鼠标在绝对模式下可见
+        SDL_ShowCursor(SDL_ENABLE);
     }
 }

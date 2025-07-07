@@ -152,6 +152,14 @@ void SdlInputHandler::performSpecialKeyCombo(KeyCombo combo)
         quitExitEvent.quit.timestamp = SDL_GetTicks();
         SDL_PushEvent(&quitExitEvent);
         break;
+        
+    case KeyComboToggleRectangleSelector:
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Detected rectangle selector toggle combo");
+        
+        // 切换矩形选择器模式
+        Session::get()->toggleRectangleSelector();
+        break;
 
     default:
         Q_UNREACHABLE();
@@ -167,6 +175,15 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
     if (event->repeat) {
         // Ignore repeat key down events
         SDL_assert(event->state == SDL_PRESSED);
+        return;
+    }
+
+    // 检查是否在矩形选择模式下按了ESC键
+    if (event->state == SDL_PRESSED && 
+        event->keysym.scancode == SDL_SCANCODE_ESCAPE && 
+        Session::get()->isRectangleSelectorActive()) {
+        // 取消矩形选择模式
+        Session::get()->toggleRectangleSelector();
         return;
     }
 

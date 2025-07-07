@@ -210,6 +210,7 @@ SOURCES += \
     settings/mappingmanager.cpp \
     gui/sdlgamepadkeynavigation.cpp \
     streaming/video/overlaymanager.cpp \
+    streaming/video/rectangleselector.cpp \
     backend/systemproperties.cpp \
     streaming/latencytracker.cpp \
     wm.cpp
@@ -248,6 +249,7 @@ HEADERS += \
     settings/mappingmanager.h \
     gui/sdlgamepadkeynavigation.h \
     streaming/video/overlaymanager.h \
+    streaming/video/rectangleselector.h \
     streaming/latencytracker.h \
     backend/systemproperties.h
 

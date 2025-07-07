@@ -4,6 +4,7 @@
 #include "SDL_compat.h"
 #include "streaming/streamutils.h"
 #include "streaming/latencytracker.h"
+#include "streaming/session.h"
 
 void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
 {
@@ -12,6 +13,18 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
     if (event->which == SDL_TOUCH_MOUSEID) {
         // Ignore synthetic mouse events
         return;
+    }
+    
+    // 检查是否处于矩形选择模式
+    if (Session::get()->isRectangleSelectorActive()) {
+        int windowWidth, windowHeight;
+        SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
+        
+        // 将事件传递给矩形选择器处理，无论鼠标是否在视频区域内
+        if (Session::get()->getRectangleSelector().handleMouseButtonEvent(event, windowWidth, windowHeight)) {
+            // 事件已被处理，不再继续
+            return;
+        }
     }
     else if (!isCaptureActive()) {
         if (event->button == SDL_BUTTON_LEFT && event->state == SDL_RELEASED &&
@@ -88,12 +101,24 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
 
 void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
 {
-    if (!isCaptureActive()) {
-        // Not capturing
+    if (event->which == SDL_TOUCH_MOUSEID) {
+        // Ignore synthetic mouse events
         return;
     }
-    else if (event->which == SDL_TOUCH_MOUSEID) {
-        // Ignore synthetic mouse events
+    
+    // 检查是否处于矩形选择模式
+    if (Session::get()->isRectangleSelectorActive()) {
+        int windowWidth, windowHeight;
+        SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
+        
+        // 将事件传递给矩形选择器处理，无论鼠标是否在视频区域内
+        if (Session::get()->getRectangleSelector().handleMouseMotionEvent(event, windowWidth, windowHeight)) {
+            // 事件已被处理，不再继续
+            return;
+        }
+    }
+    else if (!isCaptureActive()) {
+        // Not capturing
         return;
     }
 
@@ -326,3 +351,4 @@ void SdlInputHandler::updatePointerRegionLock()
 #endif
     }
 }
+

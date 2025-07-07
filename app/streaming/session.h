@@ -10,6 +10,7 @@
 #include "video/decoder.h"
 #include "audio/renderers/renderer.h"
 #include "video/overlaymanager.h"
+#include "video/rectangleselector.h"
 
 class SupportedVideoFormatList : public QList<int>
 {
@@ -121,6 +122,18 @@ public:
     Overlay::OverlayManager& getOverlayManager()
     {
         return m_OverlayManager;
+    }
+
+    RectangleSelector& getRectangleSelector()
+    {
+        return m_RectangleSelector;
+    }
+
+    void toggleRectangleSelector();
+    
+    bool isRectangleSelectorActive() const
+    {
+        return m_RectangleSelector.isActive();
     }
 
     void flushWindowEvents();
@@ -285,6 +298,7 @@ private:
     Uint32 m_DropAudioEndTime;
 
     Overlay::OverlayManager m_OverlayManager;
+    RectangleSelector m_RectangleSelector;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;
