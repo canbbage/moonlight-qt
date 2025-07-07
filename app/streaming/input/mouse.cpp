@@ -21,10 +21,10 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
         SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
         
         // 将事件传递给矩形选择器处理，无论鼠标是否在视频区域内
-        if (Session::get()->getRectangleSelector().handleMouseButtonEvent(event, windowWidth, windowHeight)) {
-            // 事件已被处理，不再继续
-            return;
-        }
+        Session::get()->getRectangleSelector().handleMouseButtonEvent(event, windowWidth, windowHeight);
+        
+        // 在矩形选择模式下，所有鼠标事件都不传递到云端
+        return;
     }
     else if (!isCaptureActive()) {
         if (event->button == SDL_BUTTON_LEFT && event->state == SDL_RELEASED &&
@@ -112,10 +112,10 @@ void SdlInputHandler::handleMouseMotionEvent(SDL_MouseMotionEvent* event)
         SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
         
         // 将事件传递给矩形选择器处理，无论鼠标是否在视频区域内
-        if (Session::get()->getRectangleSelector().handleMouseMotionEvent(event, windowWidth, windowHeight)) {
-            // 事件已被处理，不再继续
-            return;
-        }
+        Session::get()->getRectangleSelector().handleMouseMotionEvent(event, windowWidth, windowHeight);
+        
+        // 在矩形选择模式下，所有鼠标事件都不传递到云端
+        return;
     }
     else if (!isCaptureActive()) {
         // Not capturing

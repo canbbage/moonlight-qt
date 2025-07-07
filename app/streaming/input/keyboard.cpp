@@ -182,8 +182,8 @@ void SdlInputHandler::handleKeyEvent(SDL_KeyboardEvent* event)
     if (event->state == SDL_PRESSED && 
         event->keysym.scancode == SDL_SCANCODE_ESCAPE && 
         Session::get()->isRectangleSelectorActive()) {
-        // 取消矩形选择模式
-        Session::get()->toggleRectangleSelector();
+        // 取消矩形选择模式但保留矩形
+        Session::get()->cancelRectangleSelection();
         return;
     }
 

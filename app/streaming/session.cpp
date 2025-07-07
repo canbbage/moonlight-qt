@@ -2429,6 +2429,9 @@ void Session::toggleRectangleSelector()
         // 停用矩形选择模式
         m_RectangleSelector.deactivate();
         
+        // 清除矩形框显示
+        m_OverlayManager.setOverlayState(Overlay::OverlayDebug, false);
+        
         // 恢复正常的鼠标输入
         if (m_InputHandler != nullptr) {
             m_InputHandler->setRelativeMouseMode(true);
@@ -2442,6 +2445,19 @@ void Session::toggleRectangleSelector()
             m_InputHandler->setRelativeMouseMode(false);
             // 强制显示鼠标指针
             SDL_ShowCursor(SDL_ENABLE);
+        }
+    }
+}
+
+void Session::cancelRectangleSelection()
+{
+    if (m_RectangleSelector.isActive()) {
+        // 停用矩形选择模式但保留矩形
+        m_RectangleSelector.deactivate();
+        
+        // 恢复正常的鼠标输入
+        if (m_InputHandler != nullptr) {
+            m_InputHandler->setRelativeMouseMode(true);
         }
     }
 }

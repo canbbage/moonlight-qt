@@ -1,5 +1,13 @@
 #include "overlaymanager.h"
 #include "path.h"
+#include "streaming/session.h"
+#include "streaming/streamutils.h"
+
+#include <QByteArray>
+#include <QFile>
+#include <QTextStream>
+
+#include <string.h>
 
 using namespace Overlay;
 
@@ -125,7 +133,98 @@ void OverlayManager::notifyOverlayUpdated(OverlayType type)
         return;
     }
 
-    // Construct the required font to render the overlay
+    // 检查是否是特殊的绘制矩形命令
+    if (m_Overlays[type].enabled && strncmp(m_Overlays[type].text, "DRAW_RECT:", 10) == 0) {
+        // 解析矩形参数
+        float x, y, width, height;
+        int r, g, b, a, lineWidth;
+        
+        if (sscanf(m_Overlays[type].text, "DRAW_RECT:%f,%f,%f,%f,%d,%d,%d,%d,%d", 
+                  &x, &y, &width, &height, &r, &g, &b, &a, &lineWidth) == 9) {
+            // 获取窗口尺寸
+            int windowWidth, windowHeight;
+            SDL_GetWindowSize(SDL_GetWindowFromID(Session::get()->getWindowId()), &windowWidth, &windowHeight);
+            
+            // 计算视频显示区域
+            SDL_Rect src, dst;
+            src.x = src.y = 0;
+            src.w = Session::get()->getActiveVideoWidth();
+            src.h = Session::get()->getActiveVideoHeight();
+            
+            dst.x = dst.y = 0;
+            dst.w = windowWidth;
+            dst.h = windowHeight;
+            
+            // 计算视频在窗口中的实际显示区域（考虑黑边和拉伸）
+            StreamUtils::scaleSourceToDestinationSurface(&src, &dst);
+            
+            // 使用视频显示区域的尺寸创建表面，注意表面尺寸应该是整个窗口大小
+            SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, windowWidth, windowHeight, 32, SDL_PIXELFORMAT_ARGB8888);
+            if (surface) {
+                // 将表面填充为透明
+                SDL_FillRect(surface, NULL, SDL_MapRGBA(surface->format, 0, 0, 0, 0));
+                
+                // 计算矩形的像素坐标（相对于视频显示区域）
+                // x, y, width, height 是相对于视频显示区域的 0.0-1.0 值
+                SDL_Rect rect;
+                rect.x = dst.x + (int)(x * dst.w);  // 加上视频区域的偏移量
+                rect.y = dst.y + (int)(y * dst.h);  // 加上视频区域的偏移量
+                rect.w = (int)(width * dst.w);
+                rect.h = (int)(height * dst.h);
+                
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, 
+                           "绘制矩形: 相对坐标(%f,%f,%f,%f) -> 视频显示区域(%d,%d,%d,%d) -> 像素坐标(%d,%d,%d,%d)",
+                           x, y, width, height, dst.x, dst.y, dst.w, dst.h, rect.x, rect.y, rect.w, rect.h);
+                
+                // 确保矩形在表面范围内
+                if (rect.x < 0) rect.x = 0;
+                if (rect.y < 0) rect.y = 0;
+                if (rect.x + rect.w > windowWidth) rect.w = windowWidth - rect.x;
+                if (rect.y + rect.h > windowHeight) rect.h = windowHeight - rect.y;
+                
+                // 绘制矩形边框
+                Uint32 color = SDL_MapRGBA(surface->format, r, g, b, a);
+                
+                // 绘制四条边
+                SDL_Rect border;
+                // 上边
+                border.x = rect.x;
+                border.y = rect.y;
+                border.w = rect.w;
+                border.h = lineWidth;
+                SDL_FillRect(surface, &border, color);
+                
+                // 下边
+                border.y = rect.y + rect.h - lineWidth;
+                SDL_FillRect(surface, &border, color);
+                
+                // 左边
+                border.x = rect.x;
+                border.y = rect.y;
+                border.w = lineWidth;
+                border.h = rect.h;
+                SDL_FillRect(surface, &border, color);
+                
+                // 右边
+                border.x = rect.x + rect.w - lineWidth;
+                SDL_FillRect(surface, &border, color);
+                
+                // 设置表面
+                SDL_Surface* oldSurface = (SDL_Surface*)SDL_AtomicSetPtr((void**)&m_Overlays[type].surface, nullptr);
+                if (oldSurface != nullptr) {
+                    SDL_FreeSurface(oldSurface);
+                }
+                
+                SDL_AtomicSetPtr((void**)&m_Overlays[type].surface, surface);
+                
+                // 通知渲染器
+                m_Renderer->notifyOverlayUpdated(type);
+                return;
+            }
+        }
+    }
+
+    // 构建所需的字体来渲染覆盖层
     if (m_Overlays[type].font == nullptr) {
         // 使用系统字体，尝试加载支持中文的字体
         #ifdef Q_OS_WIN

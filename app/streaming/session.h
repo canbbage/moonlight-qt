@@ -131,9 +131,26 @@ public:
 
     void toggleRectangleSelector();
     
+    void cancelRectangleSelection();
+    
     bool isRectangleSelectorActive() const
     {
         return m_RectangleSelector.isActive();
+    }
+    
+    int getActiveVideoWidth() const
+    {
+        return m_ActiveVideoWidth;
+    }
+    
+    int getActiveVideoHeight() const
+    {
+        return m_ActiveVideoHeight;
+    }
+    
+    Uint32 getWindowId() const
+    {
+        return m_Window != nullptr ? SDL_GetWindowID(m_Window) : 0;
     }
 
     void flushWindowEvents();
