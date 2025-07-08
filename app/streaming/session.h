@@ -138,6 +138,18 @@ public:
         return m_RectangleSelector.isActive();
     }
     
+    // 新增：是否启用了时延跟踪
+    bool isLatencyTrackingEnabled() const
+    {
+        return m_LatencyTrackingEnabled;
+    }
+    
+    // 新增：设置时延跟踪状态
+    void setLatencyTrackingEnabled(bool enabled)
+    {
+        m_LatencyTrackingEnabled = enabled;
+    }
+    
     int getActiveVideoWidth() const
     {
         return m_ActiveVideoWidth;
@@ -320,4 +332,7 @@ private:
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;
     static QSemaphore s_ActiveSessionSemaphore;
+    
+    // 新增：是否启用了时延跟踪
+    bool m_LatencyTrackingEnabled;
 };

@@ -591,7 +591,8 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_AudioRenderer(nullptr),
       m_AudioSampleCount(0),
       m_DropAudioEndTime(0),
-      m_RectangleSelector(&m_OverlayManager)
+      m_RectangleSelector(&m_OverlayManager),
+      m_LatencyTrackingEnabled(false)
 {
     // ... existing code ...
 }
@@ -2436,6 +2437,15 @@ void Session::toggleRectangleSelector()
         if (m_InputHandler != nullptr) {
             m_InputHandler->setRelativeMouseMode(true);
         }
+        
+        // 重置时延跟踪状态和traceID
+        setLatencyTrackingEnabled(false);
+        LiClearInputTraceId();
+        // 重置矩形信息
+        LiResetRectangleInfo();
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "退出矩形选择模式，重置时延跟踪和矩形信息");
     } else {
         // 激活矩形选择模式
         m_RectangleSelector.activate();
@@ -2459,6 +2469,12 @@ void Session::cancelRectangleSelection()
         if (m_InputHandler != nullptr) {
             m_InputHandler->setRelativeMouseMode(true);
         }
+        
+        // 启用时延跟踪
+        setLatencyTrackingEnabled(true);
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "取消矩形选择但保留矩形，启用时延跟踪");
     }
 }
 

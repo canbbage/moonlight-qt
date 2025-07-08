@@ -2,6 +2,7 @@
 
 #include "settings/streamingpreferences.h"
 #include "backend/computermanager.h"
+#include <Limelight.h>
 
 #include "SDL_compat.h"
 #include <QString>

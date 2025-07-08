@@ -78,22 +78,54 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
 
     // 跟踪鼠标左键按下事件的延迟
     int trackingId = 0;
-    if (button == BUTTON_LEFT && event->state == SDL_PRESSED) {
+    
+    // 只有在启用了时延跟踪时才生成trackingId
+    if (Session::get()->isLatencyTrackingEnabled() && button == BUTTON_LEFT && event->state == SDL_PRESSED) {
         // 生成唯一ID并开始跟踪
         trackingId = LatencyTracker::instance()->startTracking(LatencyTracker::EVENT_MOUSE_CLICK);
-    
+        
         LatencyTracker::instance()->recordTimestamp(trackingId, LatencyTracker::STAGE_INPUT);
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "生成新的traceId: %d 用于鼠标点击事件", trackingId);
     }
 
+    // 设置输入事件的traceId
     LiSetInputTraceId(trackingId);
+    
+    // 如果有矩形框且启用了时延跟踪，将矩形框信息添加到输入事件中
+    if (trackingId != 0 && !Session::get()->isRectangleSelectorActive() && 
+        Session::get()->getRectangleSelector().getCurrentRectangle().width() > 0) {
+        
+        // 获取矩形框信息
+        QRectF rect = Session::get()->getRectangleSelector().getCurrentRectangle();
+        
+        // 获取窗口尺寸
+        int windowWidth, windowHeight;
+        SDL_GetWindowSize(m_Window, &windowWidth, &windowHeight);
+        
+        // 获取矩形的绝对坐标
+        QRect absRect = Session::get()->getRectangleSelector().getAbsoluteRect(windowWidth, windowHeight);
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "添加矩形信息到输入事件: 相对坐标(%f,%f,%f,%f) 绝对坐标(%d,%d,%d,%d)",
+                    rect.x(), rect.y(), rect.width(), rect.height(),
+                    absRect.x(), absRect.y(), absRect.width(), absRect.height());
+        
+        // 使用我们新添加的函数设置矩形信息
+        // 使用相对坐标，范围为0.0-1.0
+        LiSetRectangleInfo(rect.x(), rect.y(), rect.width(), rect.height());
+    }
 
     LiSendMouseButtonEvent(event->state == SDL_PRESSED ?
                                BUTTON_ACTION_PRESS :
                                BUTTON_ACTION_RELEASE,
                            button);
-    LiClearInputTraceId();                     
+    
+    // 清除输入事件的traceId
+    LiClearInputTraceId();
+    
     // 记录发送阶段的时间戳
-
     if (trackingId != 0) {
         LatencyTracker::instance()->recordTimestamp(trackingId, LatencyTracker::STAGE_SEND);
     }
