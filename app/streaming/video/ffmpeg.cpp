@@ -1926,14 +1926,13 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
     int64_t encode_start_ns = du->encodeStartTimeNs;
     int64_t encode_end_ns = du->encodeEndTimeNs;
     
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-              "从帧头获取: traceId=%u, input_arrival_ns=%lld, encode_start_ns=%lld, encode_end_ns=%lld",
-              traceId, input_arrival_ns, encode_start_ns, encode_end_ns);
-    
-    // 记录解码开始时间并添加Sunshine时间戳到LatencyTracker
-    LatencyTracker* tracker = LatencyTracker::instance();
-    
     if (traceId != 0) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+            "从帧头获取: traceId=%u, input_arrival_ns=%lld, encode_start_ns=%lld, encode_end_ns=%lld",
+            traceId, input_arrival_ns, encode_start_ns, encode_end_ns);
+  
+        // 记录解码开始时间并添加Sunshine时间戳到LatencyTracker
+        LatencyTracker* tracker = LatencyTracker::instance();
         // 记录framenumber和traceid的对应关系
         QMutexLocker locker(&m_FrameTraceMapLock);
         m_FrameNumberToTraceId[du->frameNumber] = traceId;

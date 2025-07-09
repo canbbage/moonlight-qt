@@ -63,12 +63,7 @@ public:
     // 计算并获取各阶段之间的延迟
     QMap<QString, qint64> getLatencies(int id);
     
-    // 将完整的延迟数据发送到InfluxDB
-    bool sendToInfluxDB(int id);
-    
-    // 初始化InfluxDB连接
-    bool initializeInfluxDB(const QString& influxUrl, const QString& dbName, 
-                           const QString& username, const QString& password);
+
     
     // 清理过期的数据
     void cleanup(int maxAgeMs = 30000);
@@ -79,8 +74,7 @@ public:
     // 获取特定ID的所有时间戳
     QMap<TrackingStage, qint64> getAllTimestamps(int id) const;
     
-    // 设置是否启用InfluxDB
-    void setInfluxDBEnabled(bool enabled);
+
     
     // 检查是否存在指定ID
     bool hasTrackingId(int id) const;
@@ -119,12 +113,7 @@ private:
     // 最大ID值，超过此值将重置为1
     static const int MAX_ID = 200;
     
-    // InfluxDB相关配置
-    QString m_influxUrl;
-    QString m_dbName;
-    QString m_username;
-    QString m_password;
-    bool m_influxEnabled;
+
     
     // 私有构造函数
     LatencyTracker();
