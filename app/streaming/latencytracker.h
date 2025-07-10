@@ -5,6 +5,45 @@
 #include <QMutex>
 #include <QDateTime>
 #include <QString>
+#include <QThread>
+#include <QQueue>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QUrlQuery>
+#include <QWaitCondition>
+
+// 发送线程类，专门用于发送数据到InfluxDB
+class InfluxSenderThread : public QThread
+{
+    Q_OBJECT
+public:
+    InfluxSenderThread();
+    ~InfluxSenderThread();
+    
+    // 添加数据到队列
+    void addToQueue(const QString& lineProtocol);
+    
+    // 停止线程
+    void stopThread();
+    
+protected:
+    // 线程执行函数
+    void run() override;
+    
+private:
+    // 数据队列
+    QQueue<QString> m_dataQueue;
+    
+    // 互斥锁，用于保护队列
+    QMutex m_queueMutex;
+    
+    // 条件变量，用于通知线程有新数据
+    QWaitCondition m_queueNotEmpty;
+    
+    // 线程是否应该继续运行
+    bool m_running;
+};
 
 // 延迟跟踪器类，用于测量输入事件从产生到渲染的各个阶段的延迟
 class LatencyTracker : public QObject
@@ -63,7 +102,6 @@ public:
     // 计算并获取各阶段之间的延迟
     QMap<QString, qint64> getLatencies(int id);
     
-
     
     // 清理过期的数据
     void cleanup(int maxAgeMs = 30000);
@@ -75,7 +113,6 @@ public:
     QMap<TrackingStage, qint64> getAllTimestamps(int id) const;
     
 
-    
     // 检查是否存在指定ID
     bool hasTrackingId(int id) const;
     
@@ -113,7 +150,6 @@ private:
     // 最大ID值，超过此值将重置为1
     static const int MAX_ID = 200;
     
-
     
     // 私有构造函数
     LatencyTracker();
@@ -122,4 +158,10 @@ private:
     // 禁止拷贝
     LatencyTracker(const LatencyTracker&) = delete;
     LatencyTracker& operator=(const LatencyTracker&) = delete;
+    
+    // 异步发送InfluxDB数据
+    void sendToInfluxDBAsync(const QString& lineProtocol);
+    
+    // 发送线程
+    InfluxSenderThread* m_senderThread;
 }; 

@@ -8,9 +8,158 @@
 #include <QUrlQuery>
 #include <QRandomGenerator>
 #include <QEventLoop>
+#include <QTimer>
+#include <QThread>
 #include <QDebug>
 #include <QDateTime>
+#include <QCoreApplication>
 #include "session.h"
+
+// InfluxSenderThread实现
+InfluxSenderThread::InfluxSenderThread() : m_running(true)
+{
+    qDebug() << "InfluxSenderThread: Constructor called";
+}
+
+InfluxSenderThread::~InfluxSenderThread()
+{
+    stopThread();
+}
+
+void InfluxSenderThread::addToQueue(const QString& lineProtocol)
+{
+    QMutexLocker locker(&m_queueMutex);
+    m_dataQueue.enqueue(lineProtocol);
+    qDebug() << "InfluxSenderThread: Data added to queue, size:" << m_dataQueue.size();
+    
+    // 通知线程有新数据
+    m_queueNotEmpty.wakeOne();
+}
+
+void InfluxSenderThread::stopThread()
+{
+    qDebug() << "InfluxSenderThread: Stopping thread";
+    
+    {
+        QMutexLocker locker(&m_queueMutex);
+        m_running = false;
+        m_queueNotEmpty.wakeOne();
+    }
+    
+    // 等待线程结束
+    wait();
+    qDebug() << "InfluxSenderThread: Thread stopped";
+}
+
+void InfluxSenderThread::run()
+{
+    qDebug() << "InfluxSenderThread: Thread started";
+    
+    // 创建网络访问管理器
+    QNetworkAccessManager networkManager;
+    qDebug() << "InfluxSenderThread: Network manager created in thread:" << QThread::currentThread();
+    
+    while (m_running) {
+        QString lineProtocol;
+        
+        // 从队列中获取数据
+        {
+            QMutexLocker locker(&m_queueMutex);
+            
+            // 如果队列为空，等待新数据
+            if (m_dataQueue.isEmpty()) {
+                qDebug() << "InfluxSenderThread: Queue empty, waiting for data";
+                m_queueNotEmpty.wait(&m_queueMutex);
+                
+                // 如果被唤醒是因为线程需要停止，则退出
+                if (!m_running) {
+                    qDebug() << "InfluxSenderThread: Thread signaled to stop";
+                    break;
+                }
+                
+                // 再次检查队列是否为空
+                if (m_dataQueue.isEmpty()) {
+                    continue;
+                }
+            }
+            
+            // 从队列中取出一条数据
+            lineProtocol = m_dataQueue.dequeue();
+            qDebug() << "InfluxSenderThread: Data dequeued, remaining items:" << m_dataQueue.size();
+        }
+        
+        // 发送数据到InfluxDB
+        try {
+            // 固定的InfluxDB配置
+            QString influxDBUrl = "http://192.168.1.6:8181";
+            QString influxDBDatabase = "testDB"; 
+            QString influxDBAuthToken = "apiv3_S9waXgiGOZkGccVT5iuSxDTl_5wrCrJ8cmo7yyl2xKGH5tGnAcjnNwrIrVJK5qpey8ltqcrzmUNvClfhVqdwLg";
+            
+            // 构建URL
+            QUrl url(influxDBUrl);
+            QString apiPath = "/api/v3/write_lp";
+            QUrlQuery query;
+            query.addQueryItem("db", influxDBDatabase);
+            query.addQueryItem("precision", "auto");
+            url.setPath(apiPath);
+            url.setQuery(query);
+            
+            qDebug() << "InfluxSenderThread: Sending data to URL:" << url.toString();
+            
+            // 创建请求对象
+            QNetworkRequest request(url);
+            request.setHeader(QNetworkRequest::ContentTypeHeader, "text/plain");
+            
+            // 添加认证头
+            if (!influxDBAuthToken.isEmpty()) {
+                request.setRawHeader("Authorization", QString("Token %1").arg(influxDBAuthToken).toUtf8());
+            }
+            
+            // 创建事件循环以同步等待响应
+            QEventLoop loop;
+            
+            // 发送POST请求
+            QNetworkReply* reply = networkManager.post(request, lineProtocol.toUtf8());
+            
+            // 连接信号以在请求完成时退出事件循环
+            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            
+            // 设置超时
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            timer.start(5000); // 5秒超时
+            
+            // 等待请求完成或超时
+            loop.exec();
+            
+            // 处理响应
+            if (reply->isFinished() && reply->error() == QNetworkReply::NoError) {
+                qDebug() << "InfluxSenderThread: Successfully sent data to InfluxDB";
+            } else {
+                QString errorString = reply->isFinished() ? reply->errorString() : "Request timed out";
+                qWarning() << "InfluxSenderThread: Failed to send data to InfluxDB:" << errorString;
+                
+                if (reply->isFinished()) {
+                    qWarning() << "InfluxSenderThread: HTTP Status Code:" << reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                    QString responseData = reply->readAll();
+                    qWarning() << "InfluxSenderThread: Response content:" << responseData;
+                }
+            }
+            
+            // 清理
+            reply->deleteLater();
+        }
+        catch (const std::exception& e) {
+            qWarning() << "InfluxSenderThread: Exception while sending data:" << e.what();
+        }
+        catch (...) {
+            qWarning() << "InfluxSenderThread: Unknown exception while sending data";
+        }
+    }
+    
+    qDebug() << "InfluxSenderThread: Thread exiting";
+}
 
 // 初始化静态成员
 LatencyTracker* LatencyTracker::s_instance = nullptr;
@@ -18,7 +167,9 @@ LatencyTracker* LatencyTracker::s_instance = nullptr;
 LatencyTracker* LatencyTracker::instance()
 {
     if (!s_instance) {
+        qDebug() << "LatencyTracker: Creating singleton instance";
         s_instance = new LatencyTracker();
+        qDebug() << "LatencyTracker: Singleton instance created";
     }
     return s_instance;
 }
@@ -31,15 +182,41 @@ void LatencyTracker::destroy()
     }
 }
 
-LatencyTracker::LatencyTracker() : QObject(nullptr), m_currentId(1)
+LatencyTracker::LatencyTracker() : QObject(), m_currentId(1), m_senderThread(nullptr)
 {
-    // 默认构造函数
+    qDebug() << "LatencyTracker: Initializing";
+    qDebug() << "LatencyTracker: Constructor thread:" << QThread::currentThread();
+    
+    // 创建并启动发送线程
+    m_senderThread = new InfluxSenderThread();
+    m_senderThread->start();
+    qDebug() << "LatencyTracker: Sender thread started";
 }
 
 LatencyTracker::~LatencyTracker()
 {
     // 清理资源
     m_entries.clear();
+    
+    // 停止并删除发送线程
+    if (m_senderThread) {
+        m_senderThread->stopThread();
+        delete m_senderThread;
+        m_senderThread = nullptr;
+    }
+}
+
+// 异步发送InfluxDB数据
+void LatencyTracker::sendToInfluxDBAsync(const QString& lineProtocol)
+{
+    qDebug() << "LatencyTracker: Sending data to InfluxDB asynchronously";
+    
+    if (m_senderThread) {
+        m_senderThread->addToQueue(lineProtocol);
+        qDebug() << "LatencyTracker: Data added to sender thread queue";
+    } else {
+        qWarning() << "LatencyTracker: Sender thread is null, cannot send data";
+    }
 }
 
 int LatencyTracker::startTracking(EventType eventType)
@@ -136,8 +313,6 @@ QMap<QString, qint64> LatencyTracker::getLatencies(int id)
     return latencies;
 }
 
-// 旧的sendToInfluxDB方法已移除，新的实现在calculateAndLogLatencies方法中
-
 void LatencyTracker::cleanup(int maxAgeMs)
 {
     QMutexLocker locker(&m_mutex);
@@ -190,8 +365,6 @@ bool LatencyTracker::hasTrackingId(int id) const
     QMutexLocker locker(&m_mutex);
     return m_entries.constFind(id) != m_entries.constEnd();
 }
-
-// 这里曾经有一个getEventType的定义，已移至下方
 
 // 记录Sunshine的时间戳（纳秒级别）
 void LatencyTracker::recordSunshineTimestamp(int id, TrackingStage stage, int64_t timestampNs)
@@ -284,6 +457,12 @@ void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 r
     // 获取所有时间戳
     QMap<TrackingStage, qint64> timestamps = m_entries[id].timestamps;
     
+    // 调试输出所有时间戳
+    qDebug() << "LatencyTracker: All timestamps for ID" << id << ":";
+    for (auto it = timestamps.constBegin(); it != timestamps.constEnd(); ++it) {
+        qDebug() << "  Stage:" << getStageName(it.key()) << "Timestamp:" << it.value();
+    }
+    
     // 计算各个阶段的时间间隔
     qint64 inputToSendTime = 0;
     qint64 sunshineInputToEncodeTime = 0;
@@ -373,11 +552,7 @@ void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 r
     
     if (enableInfluxDB) {
         try {
-            // 固定的InfluxDB配置
-            QString influxDBUrl = "http://192.168.31.40:8181";
-            QString influxDBDatabase = "testDB"; 
-            QString influxDBAuthToken = "apiv3_S9waXgiGOZkGccVT5iuSxDTl_5wrCrJ8cmo7yyl2xKGH5tGnAcjnNwrIrVJK5qpey8ltqcrzmUNvClfhVqdwLg";
-            
+            qDebug() << "LatencyTracker: Preparing data for InfluxDB";
             // 获取当前时间的纳秒时间戳
             qint64 timestampNs = QDateTime::currentMSecsSinceEpoch() * 1000000;
             
@@ -418,54 +593,16 @@ void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 r
             // 添加时间戳和换行符
             lineProtocol += QString(" %1\n").arg(timestampNs);
             
-            // 添加调试信息
-            qDebug() << "LatencyTracker: Line protocol data:" << lineProtocol;
+            qDebug() << "LatencyTracker: Built InfluxDB line protocol data:" << lineProtocol;
             
-            // 创建网络请求
-            QNetworkAccessManager manager;
-            
-            // 构建URL，类似：http://192.168.31.40:8181/api/v3/write_lp?db=moonlight&precision=auto
-            QUrl url(influxDBUrl);
-            QString apiPath = "/api/v3/write_lp";
-            QUrlQuery query;
-            query.addQueryItem("db", influxDBDatabase);
-            query.addQueryItem("precision", "auto");  // 使用auto而不是ns
-            url.setPath(apiPath);
-            url.setQuery(query);
-            
-            qDebug() << "LatencyTracker: Sending data to InfluxDB URL:" << url.toString();
-            
-            // 创建请求对象
-            QNetworkRequest request(url);
-            request.setHeader(QNetworkRequest::ContentTypeHeader, "text/plain");
-            
-            // 添加认证头
-            if (!influxDBAuthToken.isEmpty()) {
-                request.setRawHeader("Authorization", QString("Token %1").arg(influxDBAuthToken).toUtf8());
-            }
-            
-            // 发送POST请求
-            QNetworkReply* reply = manager.post(request, lineProtocol.toUtf8());
-            
-            // 等待请求完成
-            QEventLoop loop;
-            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-            loop.exec();
-            
-            if (reply->error() == QNetworkReply::NoError) {
-                qDebug() << "LatencyTracker: Successfully sent data to InfluxDB for ID:" << id;
-            } else {
-                // 读取响应内容以获取更详细的错误信息
-                QString responseData = reply->readAll();
-                qWarning() << "LatencyTracker: Failed to send data to InfluxDB:" << reply->errorString();
-                qWarning() << "LatencyTracker: HTTP Status Code:" << reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-                qWarning() << "LatencyTracker: Response content:" << responseData;
-            }
-            
-            reply->deleteLater();
+            // 使用专门的线程发送数据到InfluxDB
+            sendToInfluxDBAsync(lineProtocol);
         }
         catch (const std::exception& e) {
-            qWarning() << "LatencyTracker: Exception while sending data to InfluxDB:" << e.what();
+            qWarning() << "LatencyTracker: Exception while preparing data for InfluxDB:" << e.what();
+        }
+        catch (...) {
+            qWarning() << "LatencyTracker: Unknown exception while preparing data for InfluxDB";
         }
     }
 } 
