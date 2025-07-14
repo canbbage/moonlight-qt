@@ -120,7 +120,7 @@ public:
     EventType getEventType(int id) const;
     
     // 计算并打印各个阶段的延迟
-    void calculateAndLogLatencies(int id, qint64 pacerTime, qint64 renderTime);
+    void calculateAndLogLatencies(int id, qint64 pacerTime = 0, qint64 renderTime = 0);
     
     // 获取阶段名称
     static QString getStageName(TrackingStage stage);
@@ -139,7 +139,7 @@ private:
     // 存储事件ID和对应的时间戳
     struct TimestampEntry {
         EventType eventType;                   // 事件类型
-        QMap<TrackingStage, qint64> timestamps; // 阶段 -> 时间戳
+        QMap<TrackingStage, qint64> timestamps; // 阶段 -> 时间戳（微秒）
     };
     
     QMap<int, TimestampEntry> m_entries; // ID -> 时间戳条目
@@ -164,4 +164,13 @@ private:
     
     // 发送线程
     InfluxSenderThread* m_senderThread;
+    
+    // 获取高精度时间戳（毫秒）
+    qint64 getHighResolutionTimeMs();
+    
+    // 获取高精度时间戳（微秒）
+    qint64 getHighResolutionTimeUs();
+    
+    // 获取高精度时间戳（纳秒）
+    qint64 getHighResolutionTimeNs();
 }; 

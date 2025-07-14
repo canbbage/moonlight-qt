@@ -359,12 +359,9 @@ void Pacer::renderFrame(AVFrame* frame)
     if (traceId != 0 && tracker != nullptr && tracker->hasTrackingId(traceId)) {
         tracker->recordTimestamp(traceId, LatencyTracker::STAGE_RENDER_END);
         
-        // 计算pacer时间和渲染时间
-        qint64 pacerTime = beforeRender - frame->pkt_dts; // 从Pacer统计
-        qint64 renderTime = afterRender - beforeRender;   // 从Pacer统计
-        
         // 使用LatencyTracker计算和打印各个阶段的延迟
-        tracker->calculateAndLogLatencies(traceId, pacerTime, renderTime);
+        // 不再传递pacerTime和renderTime，直接使用我们自己记录的时间戳
+        tracker->calculateAndLogLatencies(traceId, 0, 0);
     }
 
     m_VideoStats->totalRenderTime += afterRender - beforeRender;

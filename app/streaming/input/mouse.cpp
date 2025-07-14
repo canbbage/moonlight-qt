@@ -81,17 +81,15 @@ void SdlInputHandler::handleMouseButtonEvent(SDL_MouseButtonEvent* event)
     
     // 只有在启用了时延跟踪时才生成trackingId
     if (Session::get()->isLatencyTrackingEnabled() && button == BUTTON_LEFT && event->state == SDL_PRESSED) {
-        // 生成唯一ID并开始跟踪
+        // 生成唯一ID并开始跟踪（startTracking内部已经记录了INPUT阶段的时间戳）
         trackingId = LatencyTracker::instance()->startTracking(LatencyTracker::EVENT_MOUSE_CLICK);
-        
-        LatencyTracker::instance()->recordTimestamp(trackingId, LatencyTracker::STAGE_INPUT);
         
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "生成新的traceId: %d 用于鼠标点击事件", trackingId);
     }
 
     // 设置输入事件的traceId
-    LiSetInputTraceId(trackingId);
+    LiSetInputTraceId(trackingId); 
     
     // 如果有矩形框且启用了时延跟踪，将矩形框信息添加到输入事件中
     if (trackingId != 0 && !Session::get()->isRectangleSelectorActive() && 

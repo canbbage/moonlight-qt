@@ -16,6 +16,12 @@
 #include "session.h"
 #include "../settings/streamingpreferences.h"
 
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#elif defined(Q_OS_UNIX) || defined(Q_OS_LINUX) || defined(Q_OS_MAC)
+#include <time.h>
+#endif
+
 // InfluxSenderThread实现
 InfluxSenderThread::InfluxSenderThread() : m_running(true)
 {
@@ -162,6 +168,78 @@ void InfluxSenderThread::run()
     qDebug() << "InfluxSenderThread: Thread exiting";
 }
 
+// 获取高精度时间戳（毫秒）
+qint64 LatencyTracker::getHighResolutionTimeMs()
+{
+    qint64 timestamp;
+#if defined(Q_OS_WIN)
+    // Windows平台使用QueryPerformanceCounter获取高精度
+    LARGE_INTEGER counter, freq;
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&freq);
+    // 转换为毫秒
+    timestamp = (counter.QuadPart * 1000) / freq.QuadPart;
+#elif defined(CLOCK_MONOTONIC) && !defined(NO_CLOCK_GETTIME)
+    // Linux/Unix平台使用clock_gettime获取高精度
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    // 转换为毫秒
+    timestamp = ((qint64)ts.tv_sec * 1000) + (ts.tv_nsec / 1000000);
+#else
+    // 其他平台回退到LiGetMillis
+    timestamp = LiGetMillis();
+#endif
+    return timestamp;
+}
+
+// 获取高精度时间戳（微秒）
+qint64 LatencyTracker::getHighResolutionTimeUs()
+{
+    qint64 timestamp;
+#if defined(Q_OS_WIN)
+    // Windows平台使用QueryPerformanceCounter获取高精度
+    LARGE_INTEGER counter, freq;
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&freq);
+    // 转换为微秒
+    timestamp = (counter.QuadPart * 1000000) / freq.QuadPart;
+#elif defined(CLOCK_MONOTONIC) && !defined(NO_CLOCK_GETTIME)
+    // Linux/Unix平台使用clock_gettime获取高精度
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    // 转换为微秒
+    timestamp = ((qint64)ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
+#else
+    // 其他平台回退到LiGetMillis，但转换为微秒
+    timestamp = LiGetMillis() * 1000;
+#endif
+    return timestamp;
+}
+
+// 获取高精度时间戳（纳秒）
+qint64 LatencyTracker::getHighResolutionTimeNs()
+{
+    qint64 timestamp;
+#if defined(Q_OS_WIN)
+    // Windows平台使用QueryPerformanceCounter获取高精度
+    LARGE_INTEGER counter, freq;
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&freq);
+    // 转换为纳秒
+    timestamp = (counter.QuadPart * 1000000000) / freq.QuadPart;
+#elif defined(CLOCK_MONOTONIC) && !defined(NO_CLOCK_GETTIME)
+    // Linux/Unix平台使用clock_gettime获取高精度
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    // 转换为纳秒
+    timestamp = ((qint64)ts.tv_sec * 1000000000) + ts.tv_nsec;
+#else
+    // 其他平台回退到LiGetMillis，但转换为纳秒
+    timestamp = LiGetMillis() * 1000000;
+#endif
+    return timestamp;
+}
+
 // 初始化静态成员
 LatencyTracker* LatencyTracker::s_instance = nullptr;
 
@@ -230,10 +308,10 @@ int LatencyTracker::startTracking(EventType eventType)
     // 更新ID计数器，超过最大值则重置为1
     m_currentId = (m_currentId % MAX_ID) + 1;
     
-    // 创建新条目并记录起始时间戳
+    // 创建新条目并记录起始时间戳（微秒级精度）
     TimestampEntry entry;
     entry.eventType = eventType;
-    entry.timestamps[STAGE_INPUT] = LiGetMillis(); // 使用LiGetMillis()替代SDL_GetTicks()
+    entry.timestamps[STAGE_INPUT] = getHighResolutionTimeUs();
     
     m_entries[id] = entry;
     
@@ -261,10 +339,9 @@ void LatencyTracker::recordTimestamp(int id, TrackingStage stage)
     QMutexLocker locker(&m_mutex);
     
     if (m_entries.contains(id)) {
-        // 使用PltGetMillis()获取时间戳，与Moonlight-common-c使用相同的时间基准
-        qint64 timestamp = LiGetMillis();  // LiGetMillis内部调用PltGetMillis
+        qint64 timestamp = getHighResolutionTimeUs(); // 使用微秒级精度
         m_entries[id].timestamps[stage] = timestamp;
-        qDebug() << "LatencyTracker: Recorded ID:" << id << "at stage:" << getStageName(stage) << "timestamp:" << timestamp;
+        qDebug() << "LatencyTracker: Recorded ID:" << id << "at stage:" << getStageName(stage) << "timestamp:" << timestamp << "微秒";
     } else {
         qWarning() << "LatencyTracker: Attempted to record timestamp for unknown ID:" << id;
     }
@@ -373,7 +450,7 @@ void LatencyTracker::recordSunshineTimestamp(int id, TrackingStage stage, int64_
     QMutexLocker locker(&m_mutex);
     
     if (m_entries.contains(id)) {
-        // 直接存储纳秒值，不转换为毫秒
+        // 存储纳秒值，保持原始精度
         m_entries[id].timestamps[stage] = timestampNs;
         qDebug() << "LatencyTracker: Recorded Sunshine timestamp for ID:" << id 
                  << "at stage:" << getStageName(stage) 
@@ -459,93 +536,117 @@ void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 r
     QMap<TrackingStage, qint64> timestamps = m_entries[id].timestamps;
     
     // 调试输出所有时间戳
-    qDebug() << "LatencyTracker: All timestamps for ID" << id << ":";
+    qDebug() << "LatencyTracker: All timestamps for ID" << id << ": (微秒级精度)";
     for (auto it = timestamps.constBegin(); it != timestamps.constEnd(); ++it) {
-        qDebug() << "  Stage:" << getStageName(it.key()) << "Timestamp:" << it.value();
+        qDebug() << "  Stage:" << getStageName(it.key()) << "Timestamp:" << it.value() << "微秒";
     }
     
-    // 计算各个阶段的时间间隔
-    qint64 inputToSendTime = 1000;
-    qint64 sunshineInputToEncodeTime = 1000;
-    qint64 encodeTime = 1000;
-    qint64 sendToReceiveTime = 1000;
-    qint64 receiveToDecodeTime = 1000;
-    qint64 decodeTime = 1000;
+    // 计算各个阶段的时间间隔（微秒）
+    qint64 inputToSendTime = 0;
+    qint64 sunshineInputToEncodeTime = 0;
+    qint64 encodeTime = 0;
+    qint64 sendToReceiveTime = 0;
+    qint64 receiveToDecodeTime = 0;
+    qint64 decodeTime = 0;
+    qint64 pacerTimeUs = 0;
+    qint64 renderTimeUs = 0;
+    qint64 sendAndReceiveTime = 0;
     
-    // 1. 端侧输入到发送之间 (毫秒)
+    // 1. 端侧输入到发送之间 (微秒)
     if (timestamps.contains(STAGE_INPUT) && timestamps.contains(STAGE_SEND)) {
         inputToSendTime = timestamps[STAGE_SEND] - timestamps[STAGE_INPUT];
     }
     
-    // 2. sunshine收到输入到编码之间 (纳秒转毫秒)
+    // 2. sunshine收到输入到编码之间 (纳秒转微秒)
     if (timestamps.contains(STAGE_SUNSHINE_INPUT_ARRIVAL) && 
         timestamps.contains(STAGE_SUNSHINE_ENCODE_START)) {
-        // 将纳秒转换为毫秒
-        qint64 inputArrivalMs = timestamps[STAGE_SUNSHINE_INPUT_ARRIVAL] / 1000000;
-        qint64 encodeStartMs = timestamps[STAGE_SUNSHINE_ENCODE_START] / 1000000;
-        sunshineInputToEncodeTime = encodeStartMs - inputArrivalMs;
+        // 将纳秒转换为微秒
+        qint64 inputArrivalUs = timestamps[STAGE_SUNSHINE_INPUT_ARRIVAL] / 1000;
+        qint64 encodeStartUs = timestamps[STAGE_SUNSHINE_ENCODE_START] / 1000;
+        sunshineInputToEncodeTime = encodeStartUs - inputArrivalUs;
     }
     
-    // 3. 编码开始到编码结束之间 (纳秒转毫秒)
+    // 3. 编码开始到编码结束之间 (纳秒转微秒)
     if (timestamps.contains(STAGE_SUNSHINE_ENCODE_START) && 
         timestamps.contains(STAGE_SUNSHINE_ENCODE_END)) {
-        // 将纳秒转换为毫秒
-        qint64 encodeStartMs = timestamps[STAGE_SUNSHINE_ENCODE_START] / 1000000;
-        qint64 encodeEndMs = timestamps[STAGE_SUNSHINE_ENCODE_END] / 1000000;
-        encodeTime = encodeEndMs - encodeStartMs;
+        // 将纳秒转换为微秒
+        qint64 encodeStartUs = timestamps[STAGE_SUNSHINE_ENCODE_START] / 1000;
+        qint64 encodeEndUs = timestamps[STAGE_SUNSHINE_ENCODE_END] / 1000;
+        encodeTime = encodeEndUs - encodeStartUs;
     }
     
-    // 4. 端侧发送输入到端侧收到码流之间 (毫秒)
+    // 4. 端侧发送输入到端侧解码之间 (微秒)
     if (timestamps.contains(STAGE_SEND) && 
-        timestamps.contains(STAGE_FRAME_RECEIVE)) {
-        sendToReceiveTime = timestamps[STAGE_FRAME_RECEIVE] - 
+        timestamps.contains(STAGE_DECODE)) {
+        sendToReceiveTime = timestamps[STAGE_DECODE] - 
                            timestamps[STAGE_SEND];
     }
     
-    // 5. 端侧收到码流到端侧解码之前 (毫秒)
+    // 5. 端侧收到码流到端侧解码之前 (微秒)
     if (timestamps.contains(STAGE_FRAME_RECEIVE) && 
         timestamps.contains(STAGE_DECODE)) {
-        receiveToDecodeTime = timestamps[STAGE_DECODE] - 
-                             timestamps[STAGE_FRAME_RECEIVE];
+        receiveToDecodeTime = 0;
+        // timestamps[STAGE_DECODE] - 
+        //                      timestamps[STAGE_FRAME_RECEIVE];
     }
     
-    // 6. 解码前到解码后 (毫秒)
+    // 6. 解码前到解码后 (微秒)
     if (timestamps.contains(STAGE_DECODE) && 
         timestamps.contains(STAGE_DECODE_END)) {
         decodeTime = timestamps[STAGE_DECODE_END] - 
                     timestamps[STAGE_DECODE];
     }
     
+    // 7. 使用我们自己记录的时间戳计算pacer时间 (微秒)
+    if (timestamps.contains(STAGE_PACER_START) && 
+        timestamps.contains(STAGE_PACER_END)) {
+        pacerTimeUs = timestamps[STAGE_PACER_END] - 
+                     timestamps[STAGE_PACER_START];
+    }
+    
+    // 8. 使用我们自己记录的时间戳计算渲染时间 (微秒)
+    if (timestamps.contains(STAGE_RENDER) && 
+        timestamps.contains(STAGE_RENDER_END)) {
+        renderTimeUs = timestamps[STAGE_RENDER_END] - 
+                      timestamps[STAGE_RENDER];
+    }
+    
+    // 9. 端侧发送输入到端侧收到码流之间 (微秒)
+    if (timestamps.contains(STAGE_SEND) && 
+        timestamps.contains(STAGE_FRAME_RECEIVE)) {
+        sendAndReceiveTime = sendToReceiveTime - sunshineInputToEncodeTime - encodeTime;
+    }
+    
     // 获取事件类型
     EventType eventType = m_entries[id].eventType;
     QString eventTypeName = getEventTypeName(eventType);
     
-    // 计算总延迟
+    // 计算总延迟 (微秒)
     qint64 totalLatency = (timestamps.contains(STAGE_INPUT) && timestamps.contains(STAGE_RENDER_END)) ?
                          timestamps[STAGE_RENDER_END] - timestamps[STAGE_INPUT] : 0;
     
-    // 打印所有时间间隔，单位为毫秒
+    // 打印所有时间间隔，单位为微秒
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-              "完成帧的渲染，traceId: %d，事件类型: %s\n"
-              "1. 端侧输入到发送: %lld ms\n"
-              "2. Sunshine收到输入到编码: %lld ms\n"
-              "3. 编码时间: %lld ms\n"
-              "4. 端侧发送到接收: %lld ms\n"
-              "5. 接收到解码: %lld ms\n"
-              "6. 解码时间: %lld ms\n"
-              "7. Pacer时间: %lld ms\n"
-              "8. 渲染时间: %lld ms\n"
-              "总延迟: %lld ms",
+              "完成帧的渲染，traceId: %d，事件类型: %s (使用微秒级精度时间戳)\n"
+              "1. 端侧输入到发送: %lld 微秒 (%.2f 毫秒)\n"
+              "2. Sunshine收到输入到编码: %lld 微秒 (%.2f 毫秒)\n"
+              "3. 编码时间: %lld 微秒 (%.2f 毫秒)\n"
+              "4. 端侧发送到解码: %lld 微秒 (%.2f 毫秒)\n"
+              "5. 接收到解码: %lld 微秒 (%.2f 毫秒)\n"
+              "6. 解码时间: %lld 微秒 (%.2f 毫秒)\n"
+              "7. Pacer时间: %lld 微秒 (%.2f 毫秒)\n"
+              "8. 渲染时间: %lld 微秒 (%.2f 毫秒)\n"
+              "总延迟: %lld 微秒 (%.2f 毫秒)",
               id, eventTypeName.toUtf8().constData(),
-              inputToSendTime,
-              sunshineInputToEncodeTime,
-              encodeTime, 
-              sendToReceiveTime, 
-              receiveToDecodeTime, 
-              decodeTime, 
-              pacerTime, 
-              renderTime, 
-              totalLatency);
+              inputToSendTime, inputToSendTime / 1000.0,
+              sunshineInputToEncodeTime, sunshineInputToEncodeTime / 1000.0,
+              encodeTime, encodeTime / 1000.0,
+              sendToReceiveTime, sendToReceiveTime / 1000.0,
+              receiveToDecodeTime, receiveToDecodeTime / 1000.0,
+              decodeTime, decodeTime / 1000.0,
+              pacerTimeUs, pacerTimeUs / 1000.0,
+              renderTimeUs, renderTimeUs / 1000.0,
+              totalLatency, totalLatency / 1000.0);
               
     // 写死InfluxDB配置，直接发送数据
     // 是否启用InfluxDB (可以根据需要修改为true)
@@ -575,20 +676,20 @@ void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 r
                 lineProtocol += QString(",app_id=%1").arg(session->m_App.id);
             }
             
-            // 添加字段值 - 所有延迟指标
+            // 添加字段值 - 所有延迟指标（微秒）
             lineProtocol += QString(" input_to_send=%1i,sunshine_input_to_encode=%2i,encode_time=%3i,")
                             .arg(inputToSendTime)
                             .arg(sunshineInputToEncodeTime)
                             .arg(encodeTime);
                             
-            lineProtocol += QString("send_to_receive=%1i,receive_to_decode=%2i,decode_time=%3i,")
-                            .arg(sendToReceiveTime)
+            lineProtocol += QString("send_and_receive=%1i,receive_to_decode=%2i,decode_time=%3i,")
+                            .arg(sendAndReceiveTime)
                             .arg(receiveToDecodeTime)
                             .arg(decodeTime);
                             
             lineProtocol += QString("pacer_time=%1i,render_time=%2i,total_latency=%3i")
-                            .arg(pacerTime)
-                            .arg(renderTime)
+                            .arg(pacerTimeUs)
+                            .arg(renderTimeUs)
                             .arg(totalLatency);
                             
             // 添加时间戳和换行符
