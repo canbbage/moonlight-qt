@@ -14,6 +14,7 @@
 #include <QDateTime>
 #include <QCoreApplication>
 #include "session.h"
+#include "../settings/streamingpreferences.h"
 
 // InfluxSenderThread实现
 InfluxSenderThread::InfluxSenderThread() : m_running(true)
@@ -90,8 +91,8 @@ void InfluxSenderThread::run()
         
         // 发送数据到InfluxDB
         try {
-            // 固定的InfluxDB配置
-            QString influxDBUrl = "http://192.168.1.6:8181";
+            // 从设置中获取InfluxDB配置
+            QString influxDBUrl = StreamingPreferences::get()->influxDbUrl;
             QString influxDBDatabase = "testDB"; 
             QString influxDBAuthToken = "apiv3_S9waXgiGOZkGccVT5iuSxDTl_5wrCrJ8cmo7yyl2xKGH5tGnAcjnNwrIrVJK5qpey8ltqcrzmUNvClfhVqdwLg";
             
@@ -127,7 +128,7 @@ void InfluxSenderThread::run()
             // 设置超时
             QTimer timer;
             timer.setSingleShot(true);
-            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            QObject::connect(&timer, SIGNAL(timeout()), &loop, SLOT(quit()));
             timer.start(5000); // 5秒超时
             
             // 等待请求完成或超时
@@ -148,7 +149,7 @@ void InfluxSenderThread::run()
             }
             
             // 清理
-            reply->deleteLater();
+            reply->deleteLater(); // QObject的子类都有deleteLater方法
         }
         catch (const std::exception& e) {
             qWarning() << "InfluxSenderThread: Exception while sending data:" << e.what();
@@ -182,14 +183,14 @@ void LatencyTracker::destroy()
     }
 }
 
-LatencyTracker::LatencyTracker() : QObject(), m_currentId(1), m_senderThread(nullptr)
+LatencyTracker::LatencyTracker() : m_currentId(1), m_senderThread(nullptr)
 {
     qDebug() << "LatencyTracker: Initializing";
     qDebug() << "LatencyTracker: Constructor thread:" << QThread::currentThread();
     
     // 创建并启动发送线程
     m_senderThread = new InfluxSenderThread();
-    m_senderThread->start();
+    m_senderThread->QThread::start(); // 明确调用QThread的start方法
     qDebug() << "LatencyTracker: Sender thread started";
 }
 
@@ -464,12 +465,12 @@ void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 r
     }
     
     // 计算各个阶段的时间间隔
-    qint64 inputToSendTime = 0;
-    qint64 sunshineInputToEncodeTime = 0;
-    qint64 encodeTime = 0;
-    qint64 sendToReceiveTime = 0;
-    qint64 receiveToDecodeTime = 0;
-    qint64 decodeTime = 0;
+    qint64 inputToSendTime = 1000;
+    qint64 sunshineInputToEncodeTime = 1000;
+    qint64 encodeTime = 1000;
+    qint64 sendToReceiveTime = 1000;
+    qint64 receiveToDecodeTime = 1000;
+    qint64 decodeTime = 1000;
     
     // 1. 端侧输入到发送之间 (毫秒)
     if (timestamps.contains(STAGE_INPUT) && timestamps.contains(STAGE_SEND)) {

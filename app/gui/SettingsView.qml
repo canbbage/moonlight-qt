@@ -1740,6 +1740,31 @@ Flickable {
                                   qsTr("You can toggle it at any time while streaming using Ctrl+Alt+Shift+S or Select+L1+R1+X.") + "\n\n" +
                                   qsTr("The performance overlay is not supported on Steam Link or Raspberry Pi.")
                 }
+
+                Label {
+                    width: parent.width
+                    id: influxDbUrlTitle
+                    text: qsTr("InfluxDB URL")
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                TextField {
+                    id: influxDbUrlField
+                    width: parent.width
+                    text: StreamingPreferences.influxDbUrl
+                    font.pointSize: 12
+                    placeholderText: "http://localhost:8086"
+                    
+                    onTextChanged: {
+                        StreamingPreferences.influxDbUrl = text
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("URL of the InfluxDB server for storing latency metrics")
+                }
             }
         }
     }
