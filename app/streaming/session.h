@@ -99,6 +99,7 @@ class Session : public QObject
     friend class AsyncConnectionStartThread;
     friend class ExecThread;
     friend class LatencyTracker;
+    friend class FpsMonitor;
 
 public:
     explicit Session(NvComputer* computer, NvApp& app, StreamingPreferences *preferences = nullptr);

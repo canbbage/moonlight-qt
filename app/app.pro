@@ -213,6 +213,7 @@ SOURCES += \
     streaming/video/rectangleselector.cpp \
     backend/systemproperties.cpp \
     streaming/latencytracker.cpp \
+    streaming/fpsmonitor.cpp \
     wm.cpp
 
 HEADERS += \
@@ -251,6 +252,7 @@ HEADERS += \
     streaming/video/overlaymanager.h \
     streaming/video/rectangleselector.h \
     streaming/latencytracker.h \
+    streaming/fpsmonitor.h \
     backend/systemproperties.h
 
 # Platform-specific renderers and decoders

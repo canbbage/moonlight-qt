@@ -2,6 +2,7 @@
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
 #include "backend/richpresencemanager.h"
+#include "streaming/fpsmonitor.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -152,6 +153,9 @@ void Session::clConnectionTerminated(int errorCode)
     event.type = SDL_QUIT;
     event.quit.timestamp = SDL_GetTicks();
     SDL_PushEvent(&event);
+
+    // 停止帧率监控（确保在主线程执行）
+    QMetaObject::invokeMethod(FpsMonitor::instance(), "stopMonitoring", Qt::QueuedConnection);
 }
 
 void Session::clLogMessage(const char* format, ...)
@@ -1694,6 +1698,9 @@ bool Session::startConnectionAsync()
         return false;
     }
 
+    // 启动帧率监控（确保在主线程执行）
+    QMetaObject::invokeMethod(FpsMonitor::instance(), "startMonitoring", Qt::QueuedConnection);
+    
     emit connectionStarted();
     return true;
 }
@@ -2422,6 +2429,9 @@ DispatchDeferredCleanup:
     // When it is complete, it will release our s_ActiveSessionSemaphore
     // reference.
     QThreadPool::globalInstance()->start(new DeferredSessionCleanupTask(this));
+
+    // 在会话结束时停止帧率监控（确保在主线程执行）
+    QMetaObject::invokeMethod(FpsMonitor::instance(), "stopMonitoring", Qt::QueuedConnection);
 }
 
 void Session::toggleRectangleSelector()

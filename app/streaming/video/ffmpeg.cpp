@@ -3,6 +3,7 @@
 #include "streaming/session.h"
 #include "streaming/streamutils.h"
 #include "streaming/latencytracker.h"
+#include "streaming/fpsmonitor.h"
 
 #include <h264_stream.h>
 
@@ -1777,6 +1778,7 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     }
 
                     m_ActiveWndVideoStats.decodedFrames++;
+                    FpsMonitor::instance()->recordFrameDecoded(); // 新增：统计解码输出帧率
 
                     // Queue the frame for rendering (or render now if pacer is disabled)
                     m_Pacer->submitFrame(frame);
@@ -1893,6 +1895,7 @@ int FFmpegVideoDecoder::submitDecodeUnit(PDECODE_UNIT du)
 
     m_ActiveWndVideoStats.receivedFrames++;
     m_ActiveWndVideoStats.totalFrames++;
+    FpsMonitor::instance()->recordFrameReceived(); // 新增：统计网络接收帧率
 
     int requiredBufferSize = du->fullLength;
     if (du->frameType == FRAME_TYPE_IDR) {
@@ -1997,6 +2000,8 @@ void FFmpegVideoDecoder::renderFrameOnMainThread()
 {
     // 注意：渲染部分的ID也应该从Sunshine发送的数据中获取，暂时移除相关实现
 
+    // 删除错误的帧率统计调用
+    // FpsMonitor::instance()->recordFrameRendered();
     m_Pacer->renderOnMainThread();
 }
 

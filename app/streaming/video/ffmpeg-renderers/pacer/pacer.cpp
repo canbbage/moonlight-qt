@@ -1,6 +1,7 @@
 #include "pacer.h"
 #include "streaming/streamutils.h"
 #include "streaming/latencytracker.h"
+#include "streaming/fpsmonitor.h"
 
 #ifdef Q_OS_WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -367,6 +368,9 @@ void Pacer::renderFrame(AVFrame* frame)
     m_VideoStats->totalRenderTime += afterRender - beforeRender;
     m_VideoStats->renderedFrames++;
     av_frame_free(&frame);
+
+    // 帧真正渲染上屏后，统计 rendered_fps
+    FpsMonitor::instance()->recordFrameRendered();
 
     // Drop frames if we have too many queued up for a while
     m_FrameQueueLock.lock();

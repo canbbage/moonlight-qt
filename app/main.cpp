@@ -47,6 +47,7 @@
 #include "streaming/session.h"
 #include "settings/streamingpreferences.h"
 #include "gui/sdlgamepadkeynavigation.h"
+#include "streaming/fpsmonitor.h"
 
 #if defined(Q_OS_WIN32)
 #define IS_UNSPECIFIED_HANDLE(x) ((x) == INVALID_HANDLE_VALUE || (x) == NULL)
@@ -579,6 +580,8 @@ int main(int argc, char *argv[])
 #endif
 
     QGuiApplication app(argc, argv);
+    // 确保 FpsMonitor 单例在主线程创建
+    FpsMonitor::instance();
 
 #ifndef STEAM_LINK
     // Force use of the KMSDRM backend for SDL when using Qt platform plugins
