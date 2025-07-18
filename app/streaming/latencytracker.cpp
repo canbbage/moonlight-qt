@@ -707,5 +707,7 @@ void LatencyTracker::calculateAndLogLatencies(int id, qint64 pacerTime, qint64 r
             qWarning() << "LatencyTracker: Unknown exception while preparing data for InfluxDB";
         }
     }
+    // 确保每个 traceId 只上报一次，渲染完成后移除该条目
+    m_entries.remove(id);
 } 
 
